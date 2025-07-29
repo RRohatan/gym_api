@@ -1,0 +1,57 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Carbon\Carbon;
+class Member extends Model
+{
+    /** @use HasFactory<\Database\Factories\MemberFactory> */
+    use HasFactory;
+
+    protected $fillable = [
+    'gimnasio_id',
+    'name',
+    'email',
+    'phone',
+    'birth_date',
+    'medical_history',
+    'sexo',
+    'estatura',
+    'peso',
+];
+
+     public function gimnasio()
+    {
+        return $this->belongsTo(Gimnasio::class);
+    }
+
+    public function memberships()
+    {
+        return $this->hasMany(Membership::class);
+    }
+
+    public function sales()
+    {
+        return $this->hasMany(SupplementSale::class);
+    }
+
+
+
+public function getEdadAttribute()
+{
+    return $this->birth_date ? Carbon::parse($this->birth_date)->age : null;
+}
+
+public function getIndiceMasaCorporalAttribute()
+{
+    if ($this->peso && $this->estatura && $this->estatura > 0) {
+        return round($this->peso / ($this->estatura ** 2), 2);
+    }
+
+    return null;
+}
+
+
+}
