@@ -69,6 +69,7 @@ public function login(Request $request)
     // Cargar el gimnasio relacionado
     $user->load('gimnasio');
 
+//dd($user);
     // Responder con token y usuario (incluyendo el gimnasio)
     return response()->json([
         'message'      => 'Inicio de sesión exitoso',

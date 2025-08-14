@@ -31,7 +31,7 @@ public function store(Request $request)
 {
     $validated = $request->validate([
         'member_id'         => 'required|exists:members,id',
-        'amount'            => 'required|numeric|min:0',
+        'amount'            => 'required|numeric|min:1000',
         'payment_method_id' => 'required|exists:payment_methods,id',
     ]);
 

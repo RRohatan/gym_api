@@ -53,5 +53,21 @@ public function getIndiceMasaCorporalAttribute()
     return null;
 }
 
+protected $appends = ['is_expired'];
+
+public function getIsExpiredAttribute()
+{
+    $lastMembership = $this->memberships()->latest('end_date')->first();
+
+    if(!$lastMembership){
+        return true; //no tiene membresia -> se considera vencida
+    }
+
+    return Carbon::now()->greaterThan($lastMembership->end_date);
+
+}
+
+
+
 
 }

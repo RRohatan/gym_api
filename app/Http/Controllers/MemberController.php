@@ -12,7 +12,9 @@ class MemberController extends Controller
     public function index(Request $request)
     {
         $gimnasioId = $request->user()->gimnasio_id;
-            return Member::where('gimnasio_id', $gimnasioId)->get();
+            return Member::where('gimnasio_id', $gimnasioId)
+            ->with('memberships')
+            ->get();
     }
 
     public function store(Request $request)
