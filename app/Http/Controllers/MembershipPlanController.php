@@ -55,7 +55,7 @@ class MembershipPlanController extends Controller
 
         $validated = $request->validate([
             'membership_type_id' => 'sometimes|exists:membership_types,id',
-            'frequency' => 'sometimes|in:semanal,quincenal,mensual',
+            'frequency' => 'sometimes|in:daily,weekly,biweekly,monthly',
             'price' => 'sometimes|numeric|min:0',
         ]);
 
