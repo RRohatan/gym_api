@@ -83,7 +83,8 @@ Route::middleware('auth:sanctum')->group(function(){
 Route::get('/paymentsToday', [PaymentController::class, 'totalToday']);
 
 
-//Route::middleware('auth:sanctum')->get('/payments/todayTotal', [PaymentController::class, 'totalToday']);
+Route::get('/memberships/by-member/{memberId}', [MembershipController::class, 'getByMemberId']);
+
 
 
 

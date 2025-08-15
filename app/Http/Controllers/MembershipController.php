@@ -36,14 +36,38 @@ public function index(Request $request)
     $validated = $request->validate([
         'member_id' => 'required|exists:members,id',
         'plan_id' => 'required|exists:membership_plans,id',
-        'start_date' => 'required|date',
-        'end_date' => 'required|date|after_or_equal:start_date',
+        'end_date' => 'required|date',
     ]);
+
+      // Verificar si el cliente ya tiene una membresía activa o vencida
+    $existing = \App\Models\Membership::where('member_id', $validated['member_id'])
+        ->whereIn('status', ['active', 'expired'])
+        ->first();
+
+    if ($existing) {
+        return response()->json([
+            'error' => 'El cliente ya tiene una membresía activa o vencida.'
+        ], 422); // 422 = Unprocessable Entity
+    }
 
     // Obtener el plan para usar su precio como saldo pendiente
     $plan = \App\Models\MembershipPlan::findOrFail($validated['plan_id']);
 
     $validated['outstanding_balance'] = $plan->price;
+
+    // Asignar fecha de inicio automáticamente
+    $validated['start_date'] = now();
+
+     // Calcular fecha de fin según frecuencia
+    $fechaFin = now()->copy();
+    switch ($plan->frequency) {
+        case 'daily':    $fechaFin->addDay(); break;
+        case 'weekly':   $fechaFin->addWeek(); break;
+        case 'biweekly': $fechaFin->addDays(15); break;
+        case 'monthly':  $fechaFin->addMonth()->day($validated['start_date']->day); break;
+    }
+    $validated['end_date'] = $fechaFin;
+
 
     $membership = \App\Models\Membership::create($validated);
 
@@ -79,5 +103,19 @@ public function index(Request $request)
         $membership->delete();
 
         return response()->json(['message' => 'Membership deleted']);
+    }
+
+    public function getByMemberId($memberId)
+    {
+        $membership = Membership::where('member_id', $memberId)
+           ->whereIn('status', ['active', 'expired'])
+           ->latest('end_date')
+           ->first();
+
+         if (!$membership) {
+        return response()->json(['error' => 'No se encontró membresía activa.'], 404);
+    }
+
+    return response()->json($membership);
     }
 }

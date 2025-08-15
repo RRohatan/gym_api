@@ -35,14 +35,14 @@ public function store(Request $request)
         'payment_method_id' => 'required|exists:payment_methods,id',
     ]);
 
-    // Buscar membresía activa
+    // Buscar la membresía activa o vencida más reciente
     $membership = Membership::where('member_id', $validated['member_id'])
-        ->where('status', 'active')
+        ->whereIn('status', ['active', 'expired'])
         ->latest('end_date')
         ->first();
 
     if (!$membership) {
-        return response()->json(['error' => 'No se encontró membresía activa.'], 404);
+        return response()->json(['error' => 'No se encontró membresía activa o expirada.'], 404);
     }
 
     // Crear el pago
@@ -60,32 +60,48 @@ public function store(Request $request)
         $membership->outstanding_balance = 0;
     }
 
-    // Verificar si ya venció, marcar como inactiva
-    if (Carbon::now()->gt(Carbon::parse($membership->end_date))) {
-        $membership->status = 'inactive';
+    // Reactivar membresía si estaba vencida y el pago cubre todo
+    if ($membership->status == 'expired' && $membership->outstanding_balance == 0) {
+        $membership->status = 'active';
+
+        // Calcular nueva fecha de vencimiento manteniendo el día de inicio
+        $startDate = Carbon::parse($membership->start_date); // día original de inscripción
+        $planFrequency = $membership->plan->frequency;
+
+        switch ($planFrequency) {
+            case 'diario':    $membership->end_date = Carbon::now()->addDay(); break;
+            case 'semanal':   $membership->end_date = Carbon::now()->addWeek(); break;
+            case 'biweekly':  $membership->end_date = Carbon::now()->addDays(15); break;
+            case 'mensual':   $membership->end_date = Carbon::parse($membership->start_date)->addMonthNoOverflow(); break;
+        }
+
+        // Resetear saldo pendiente al precio del plan
+        $membership->outstanding_balance = $membership->plan->price;
     }
 
-    // Solo renovar si el saldo pendiente es cero
-    if ($membership->outstanding_balance == 0) {
+    // Si la membresía está activa y el saldo es cero, renovar normalmente
+    if ($membership->status == 'active' && $membership->outstanding_balance == 0) {
         $fechaBase = Carbon::parse($membership->end_date);
         $frecuencia = $membership->plan->frequency;
 
         switch ($frecuencia) {
             case 'diario':     $fechaBase->addDay(); break;
             case 'semanal':    $fechaBase->addWeek(); break;
-            case 'quincenal':  $fechaBase->addDays(15); break;
+            case 'biweekly':   $fechaBase->addDays(15); break;
             case 'mensual':    $fechaBase->addMonth(); break;
         }
 
         $membership->end_date = $fechaBase;
-        $membership->status = 'active'; // reactiva si estaba inactiva
+        $membership->status = 'active';
+        $membership->outstanding_balance = $membership->plan->price;
     }
 
     $membership->save();
 
     return response()->json([
-        'message' => 'Pago registrado correctamente.',
-        'payment' => $payment
+        'message'    => 'Pago registrado correctamente.',
+        'payment'    => $payment,
+        'membership' => $membership
     ], 201);
 }
 
