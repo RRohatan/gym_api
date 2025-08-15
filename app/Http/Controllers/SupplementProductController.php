@@ -1,7 +1,7 @@
 <?php
 
 namespace App\Http\Controllers;
-
+use Illuminate\Support\Facades\Auth;
 use App\Models\SupplementProduct;
 use Illuminate\Http\Request;
 
@@ -14,16 +14,23 @@ class SupplementProductController extends Controller
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
+         $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'price' => 'required|numeric|min:0',
             'stock' => 'required|integer|min:0',
         ]);
 
-        $product = SupplementProduct::create($validated);
+         SupplementProduct::create([
+            'name' => $request->name,
+            'description' => $request->description,
+             'price' => $request->price,
+             'stock' => $request->stock,
+             'gimnasio_id' => Auth::user()->gimnasio_id,
 
-        return response()->json($product, 201);
+        ]);
+
+        return response()->json( ['message' => 'Producto creado con éxito'], 201);
     }
 
     public function show($id)

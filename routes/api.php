@@ -76,9 +76,6 @@ Route::middleware('auth:sanctum')->group(function(){
     Route::apiResource('/dailyCashbox', DailyCashboxController::class);
 });
 
-//Route::middleware('auth:sanctum')->group(function () {
- //   Route::get('/payments/todayTotal', [PaymentController::class, 'totalToday']);
-//});
 
 Route::get('/paymentsToday', [PaymentController::class, 'totalToday']);
 

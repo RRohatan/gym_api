@@ -10,7 +10,7 @@ class SupplementProduct extends Model
     /** @use HasFactory<\Database\Factories\SupplementProductFactory> */
     use HasFactory;
 
-    protected $fillable = ['name', 'description', 'price', 'stock'];
+    protected $fillable = ['name', 'description', 'price', 'stock', 'gimnasio_id'];
 
 
     public function gimnasio()
