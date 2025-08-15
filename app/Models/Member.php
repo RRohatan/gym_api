@@ -60,10 +60,11 @@ public function getIsExpiredAttribute()
     $lastMembership = $this->memberships()->latest('end_date')->first();
 
     if(!$lastMembership){
-        return true; //no tiene membresia -> se considera vencida
+        return false; //no tiene membresia -> se considera vencida
     }
 
-    return Carbon::now()->greaterThan($lastMembership->end_date);
+      return $lastMembership->status === 'expired' ||
+           now()->greaterThan($lastMembership->end_date);
 
 }
 
