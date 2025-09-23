@@ -10,7 +10,7 @@ class Gimnasio extends Model
 
     use HasFactory;
 
-    protected $fillable = ['nombre'];
+    protected $fillable = ['nombre', 'uses_acces_control'];
 
      public function users()
     {

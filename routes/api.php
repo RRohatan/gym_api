@@ -15,6 +15,7 @@ use App\Http\Controllers\MembershipController;
 use App\Http\Controllers\MembershipPlanController;
 use App\Http\Controllers\MembershipTypeController;
 use App\Http\Controllers\PaymentMethodController;
+use App\Http\Controllers\AccesController;
 
 
 Route::get('/test', function () {
@@ -82,6 +83,9 @@ Route::get('/paymentsToday', [PaymentController::class, 'totalToday']);
 
 Route::get('/memberships/by-member/{memberId}', [MembershipController::class, 'getByMemberId']);
 
+
+Route::post('/access/identification', [AccesController::class, 'accessByIdentification']);
+Route::post('/access/fingerprint', [AccesController::class, 'accessByFingerprint']);
 
 
 

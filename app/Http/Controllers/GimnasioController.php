@@ -17,6 +17,7 @@ class GimnasioController extends Controller
     {
         $validated = $request->validate([
             'nombre' => 'required|string|max:255',
+            'uses_access_control'=> 'boolean'
             // Agrega más validaciones si tienes más columnas
         ]);
 

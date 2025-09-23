@@ -11,6 +11,8 @@ class Member extends Model
     use HasFactory;
 
     protected $fillable = [
+    'identification',
+    'fingerprint_data',
     'gimnasio_id',
     'name',
     'email',
@@ -68,6 +70,11 @@ public function getIsExpiredAttribute()
 
 }
 
+
+public function accessLogs()
+{
+    return $this->hasMany(AccessLog::class);
+}
 
 
 

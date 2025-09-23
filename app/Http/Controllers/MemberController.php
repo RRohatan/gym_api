@@ -3,6 +3,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Gimnasio;
 use App\Models\Member;
 
 use Illuminate\Http\Request;
@@ -29,13 +30,25 @@ class MemberController extends Controller
             'sexo' => 'nullable|string|in:masculino,femenino,no_binario,otro,preferir_no_decir',
             'estatura' => 'nullable|numeric|min:0',
             'peso' => 'nullable|numeric|min:0',
+            'identification' => 'required|string|unique:members,identification',
         ]);
+          $validated['gimnasio_id'] = $request->user()->gimnasio_id;
+          
+            $gimnasio = Gimnasio::findOrFail($validated['gimnasio_id']);
 
-         $validated['gimnasio_id'] = $request->user()->gimnasio_id;
+            //si el gimnasio tiene activado el control de acceso, la huella es obligatoria
+            if ($gimnasio->uses_access_control) {
+                $request->validate([
+                    'fingerprint_data' => 'required|string',
+                ]);
+            }
 
-            $member = Member::create($validated);
-            return response()->json($member, 201);
+            $member = Member::create([
+                ...$validated,
+                'fingerprint_data' => $request->fingerprint_data ?? null,
+            ]);
 
+            return response()->json($member,201);
     }
 
     public function show($id)
@@ -64,12 +77,27 @@ class MemberController extends Controller
             'sexo' => 'nullable|string|in:masculino,femenino,no_binario,otro,preferir_no_decir',
             'estatura' => 'nullable|numeric|min:0',
             'peso' => 'nullable|numeric|min:0',
+            'identification' => 'required|string|unique:members,identification',
         ]);
 
-        $member->update($validated);
+       $gimnasioId = $validated['gimnasio_id'] ?? $member->gimnasio_id;
+       $gimnasio = Gimnasio::findOrFail($gimnasioId);
 
-        return response()->json($member);
+       //si el gimnasio tiene activado el control de acceso, la huella es obligatoria
+       if ($gimnasio->uses_access_control) {
+        $request->validate([
+            'fingerprint_data' => 'required|string',
+        ]);
+       }
+
+       $member->update([
+        ...$validated,
+        'fingerprint_data' => $request->fingerprint_data ?? $member->fingerprint_data,
+       ]);
+
+       return response()->json($member);
     }
+
 
     public function destroy($id)
     {
