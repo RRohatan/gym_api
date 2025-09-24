@@ -20,8 +20,10 @@ class MemberController extends Controller
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
+        $gimnasioId = $request->user()->gimnasio_id;
+        $gimnasio = Gimnasio::findOrFail($gimnasioId);
 
+        $rules = [
             'name' => 'required|string|max:255',
             'email' => 'nullable|email|unique:members,email',
             'phone' => 'nullable|string|max:20',
@@ -30,25 +32,23 @@ class MemberController extends Controller
             'sexo' => 'nullable|string|in:masculino,femenino,no_binario,otro,preferir_no_decir',
             'estatura' => 'nullable|numeric|min:0',
             'peso' => 'nullable|numeric|min:0',
-            'identification' => 'required|string|unique:members,identification',
+            'identification' => 'nullable|string|unique:members,identification',
+            'fingerprint_data' => 'nullable|string',
+        ];
+
+        if ($gimnasio->uses_access_control) {
+            $rules['identification'] = 'required|string|unique:members,identification';
+            $rules['fingerprint_data'] = 'required|string';
+        }
+
+        $validated = $request->validate($rules);
+        $validated['gimnasio_id'] = $gimnasioId;
+
+        $member = Member::create([
+            ...$validated,
         ]);
-          $validated['gimnasio_id'] = $request->user()->gimnasio_id;
-          
-            $gimnasio = Gimnasio::findOrFail($validated['gimnasio_id']);
 
-            //si el gimnasio tiene activado el control de acceso, la huella es obligatoria
-            if ($gimnasio->uses_access_control) {
-                $request->validate([
-                    'fingerprint_data' => 'required|string',
-                ]);
-            }
-
-            $member = Member::create([
-                ...$validated,
-                'fingerprint_data' => $request->fingerprint_data ?? null,
-            ]);
-
-            return response()->json($member,201);
+        return response()->json($member,201);
     }
 
     public function show($id)
@@ -67,7 +67,11 @@ class MemberController extends Controller
     {
         $member = Member::findOrFail($id);
 
-        $validated = $request->validate([
+        // Determinar el gimnasio objetivo (puede venir en el request o mantenerse)
+        $targetGimnasioId = $request->input('gimnasio_id', $member->gimnasio_id);
+        $gimnasio = Gimnasio::findOrFail($targetGimnasioId);
+
+        $rules = [
             'gimnasio_id' => 'sometimes|exists:gimnasios,id',
             'name' => 'sometimes|string|max:255',
             'email' => 'sometimes|email|unique:members,email,' . $member->id,
@@ -77,25 +81,26 @@ class MemberController extends Controller
             'sexo' => 'nullable|string|in:masculino,femenino,no_binario,otro,preferir_no_decir',
             'estatura' => 'nullable|numeric|min:0',
             'peso' => 'nullable|numeric|min:0',
-            'identification' => 'required|string|unique:members,identification',
+            'identification' => 'sometimes|string|unique:members,identification,' . $member->id,
+            'fingerprint_data' => 'nullable|string',
+        ];
+
+        if ($gimnasio->uses_access_control) {
+            // Requerir ambos si el gimnasio usa control de acceso
+            $rules['identification'] = 'required|string|unique:members,identification,' . $member->id;
+            $rules['fingerprint_data'] = 'required|string';
+        }
+
+        $validated = $request->validate($rules);
+
+        // Asegurar el gimnasio_id final
+        $validated['gimnasio_id'] = $validated['gimnasio_id'] ?? $member->gimnasio_id;
+
+        $member->update([
+            ...$validated,
         ]);
 
-       $gimnasioId = $validated['gimnasio_id'] ?? $member->gimnasio_id;
-       $gimnasio = Gimnasio::findOrFail($gimnasioId);
-
-       //si el gimnasio tiene activado el control de acceso, la huella es obligatoria
-       if ($gimnasio->uses_access_control) {
-        $request->validate([
-            'fingerprint_data' => 'required|string',
-        ]);
-       }
-
-       $member->update([
-        ...$validated,
-        'fingerprint_data' => $request->fingerprint_data ?? $member->fingerprint_data,
-       ]);
-
-       return response()->json($member);
+        return response()->json($member);
     }
 
 
