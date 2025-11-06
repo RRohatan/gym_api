@@ -33,9 +33,17 @@ public function index(Request $request)
     // --- INICIO DE LA MEJORA (FILTRO DE ESTADO) ---
 
     // 3. Aplicar filtro de estado
-    $statusFilter = $request->input('status'); // ej: 'active', 'expired', 'inactive_unpaid'
+    $statusFilter = $request->input('status'); // ej: 'active', 'expired', 'inactive_unpaid', 'expiring_soon'
 
-    if ($statusFilter && $statusFilter !== 'all') {
+    // --- ¡NUEVA LÓGICA AQUÍ! ---
+    if ($statusFilter === 'expiring_soon') {
+        // Si se pide 'expiring_soon', aplicamos la lógica del dashboard
+        $query->where('status', 'active')
+              ->whereDate('end_date', '>=', Carbon::now())
+              ->whereDate('end_date', '<=', Carbon::now()->addDays(3));
+    }
+    // --- FIN DE NUEVA LÓGICA ---
+    else if ($statusFilter && $statusFilter !== 'all') {
         // Si se pide un estado específico (ej: ?status=inactive_unpaid)
         $query->where('status', $statusFilter);
     } else if (!$statusFilter) {
@@ -90,7 +98,11 @@ public function index(Request $request)
     }
     $validated['end_date'] = $fechaFin;
 
-    $validated['status'] = 'active'; // <-- AÑADIDO: Admin crea membresías activas
+    // =================================================================
+    // Cuando el admin crea una membresía, también debe estar inactiva
+    // y esperar el pago en la vista de Pagos.
+    $validated['status'] = 'inactive_unpaid'; // <-- MODIFICADO (antes era 'active')
+    // =================================================================
 
 
     $membership = \App\Models\Membership::create($validated);
