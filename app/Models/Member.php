@@ -22,6 +22,7 @@ class Member extends Model
     'sexo',
     'estatura',
     'peso',
+    // Omitimos 'objetivo_entrenamiento' como solicitaste
 ];
 
      public function gimnasio()
@@ -57,18 +58,34 @@ public function getIndiceMasaCorporalAttribute()
 
 protected $appends = ['is_expired'];
 
+
+// --- INICIO DE LA MODIFICACIÓN (Lógica de Control de Acceso) ---
+
+/**
+ * Determina si el miembro tiene acceso al gimnasio.
+ * 'is_expired' = true SIGNIFICA QUE NO TIENE ACCESO.
+ * 'is_expired' = false SIGNIFICA QUE SÍ TIENE ACCESO.
+ */
 public function getIsExpiredAttribute()
 {
     $lastMembership = $this->memberships()->latest('end_date')->first();
 
-    if(!$lastMembership){
-        return false; //no tiene membresia -> se considera vencida
+    // 1. Si NUNCA ha tenido membresía, no tiene acceso.
+    if (!$lastMembership) {
+        return true; // "Vencida" = true
     }
 
-      return $lastMembership->status === 'expired' ||
-           now()->greaterThan($lastMembership->end_date);
+    // 2. Si su última membresía NO está activa (ej: 'expired', 'inactive_unpaid', 'cancelled')
+    if ($lastMembership->status !== 'active') {
+        return true; // "Vencida" = true
+    }
 
+    // 3. Si su membresía ESTÁ 'active', chequear la fecha en tiempo real
+    //    (Esto es por si la tarea programada [cron job] no se ha ejecutado)
+    return now()->greaterThan($lastMembership->end_date);
 }
+
+// --- FIN DE LA MODIFICACIÓN ---
 
 
 public function accessLogs()

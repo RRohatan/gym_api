@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 use App\Models\Membership;
 use App\Models\Payment;
+use App\Models\SupplementSale; // <-- 1. IMPORTAR SupplementSale
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -35,14 +36,18 @@ public function store(Request $request)
         'payment_method_id' => 'required|exists:payment_methods,id',
     ]);
 
-    // Buscar la membresía activa o vencida más reciente
-    $membership = Membership::where('member_id', $validated['member_id'])
-        ->whereIn('status', ['active', 'expired'])
+    // --- INICIO DE MODIFICACIÓN (Lógica de Reactivación) ---
+
+    // Buscar la membresía activa, vencida O PENDIENTE DE PAGO
+    $membership = Membership::with('plan') // Eager load plan
+        ->where('member_id', $validated['member_id'])
+        ->whereIn('status', ['active', 'expired', 'inactive_unpaid']) // <-- 2. MODIFICADO
         ->latest('end_date')
         ->first();
 
     if (!$membership) {
-        return response()->json(['error' => 'No se encontró membresía activa o expirada.'], 404);
+        // <-- 3. MENSAJE ACTUALIZADO
+        return response()->json(['error' => 'No se encontró membresía activa, vencida o pendiente de pago.'], 404);
     }
 
     // Crear el pago
@@ -60,29 +65,36 @@ public function store(Request $request)
         $membership->outstanding_balance = 0;
     }
 
-    // Reactivar membresía si estaba vencida y el pago cubre todo
-    if ($membership->status == 'expired' && $membership->outstanding_balance == 0) {
+    $plan = $membership->plan; // Obtenemos el plan
+
+    // 4. Reactivar membresía si estaba 'expired' O 'inactive_unpaid' Y el pago cubre todo
+    if (in_array($membership->status, ['expired', 'inactive_unpaid']) && $membership->outstanding_balance == 0) {
         $membership->status = 'active';
 
-        // Calcular nueva fecha de vencimiento manteniendo el día de inicio
-        $startDate = Carbon::parse($membership->start_date); // día original de inscripción
-        $planFrequency = $membership->plan->frequency;
+        // El nuevo ciclo de la membresía inicia HOY (fecha de pago)
+        $fechaBase = Carbon::now();
 
-        switch ($planFrequency) {
-            case 'diario':    $membership->end_date = Carbon::now()->addDay(); break;
-            case 'semanal':   $membership->end_date = Carbon::now()->addWeek(); break;
-            case 'biweekly':  $membership->end_date = Carbon::now()->addDays(15); break;
-            case 'mensual':   $membership->end_date = Carbon::parse($membership->start_date)->addMonthNoOverflow(); break;
+        // Si era un registro nuevo (del QR), actualizamos su fecha de inicio
+        if ($membership->status == 'inactive_unpaid') {
+            $membership->start_date = $fechaBase->copy();
         }
 
-        // Resetear saldo pendiente al precio del plan
-        $membership->outstanding_balance = $membership->plan->price;
+        switch ($plan->frequency) {
+            case 'diario':    $membership->end_date = $fechaBase->copy()->addDay(); break;
+            case 'semanal':   $membership->end_date = $fechaBase->copy()->addWeek(); break;
+            case 'biweekly':  $membership->end_date = $fechaBase->copy()->addDays(15); break;
+            case 'mensual':   $membership->end_date = $fechaBase->copy()->addMonthNoOverflow(); break;
+        }
+
+        // Resetear saldo pendiente al precio del plan para el PRÓXIMO ciclo
+        $membership->outstanding_balance = $plan->price;
     }
 
-    // Si la membresía está activa y el saldo es cero, renovar normalmente
-    if ($membership->status == 'active' && $membership->outstanding_balance == 0) {
+    // 5. Renovar si la membresía YA ESTABA activa y el saldo es cero
+    else if ($membership->status == 'active' && $membership->outstanding_balance == 0) {
+        // Esta lógica extiende la fecha de fin (Renovación normal)
         $fechaBase = Carbon::parse($membership->end_date);
-        $frecuencia = $membership->plan->frequency;
+        $frecuencia = $plan->frequency;
 
         switch ($frecuencia) {
             case 'diario':     $fechaBase->addDay(); break;
@@ -93,10 +105,15 @@ public function store(Request $request)
 
         $membership->end_date = $fechaBase;
         $membership->status = 'active';
-        $membership->outstanding_balance = $membership->plan->price;
+        $membership->outstanding_balance = $plan->price;
     }
 
     $membership->save();
+
+    // --- FIN DE MODIFICACIÓN ---
+
+    // TODO: Aquí puedes añadir la lógica para generar y enviar el recibo por email
+    // Mail::to($membership->member->email)->send(new PaymentReceipt($payment));
 
     return response()->json([
         'message'    => 'Pago registrado correctamente.',
@@ -147,4 +164,68 @@ public function store(Request $request)
     return response()->json(['total' => $total]);
 }
 
+    // --- 6. MÉTODO NUEVO PARA HISTORIAL DE PAGOS (DASHBOARD) ---
+    /**
+     * Obtiene historial de ingresos (Membresías Y Suplementos)
+     * para un rango de fechas.
+     */
+    public function getHistory(Request $request)
+    {
+        $gimnasioId = $request->user()->gimnasio_id;
+
+        $request->validate([
+            'start_date' => 'nullable|date_format:Y-m-d',
+            'end_date' => 'nullable|date_format:Y-m-d|after_or_equal:start_date',
+        ]);
+
+        // Usar inicio de mes por defecto si no se provee fecha
+        $startDate = $request->input('start_date', Carbon::now()->startOfMonth()->format('Y-m-d'));
+        // Usar hoy por defecto
+        $endDate = $request->input('end_date', Carbon::now()->format('Y-m-d'));
+
+        // Carbon necesita 'endOfDay' para incluir transacciones de hoy
+        $endDateCarbon = Carbon::parse($endDate)->endOfDay();
+        $startDateCarbon = Carbon::parse($startDate)->startOfDay();
+
+
+        // 1. Pagos de Membresías
+        $queryPayments = Payment::with(['paymentable.member', 'payment_method'])
+            ->whereBetween('paid_at', [$startDateCarbon, $endDateCarbon])
+            ->whereHasMorph(
+                'paymentable',
+                [Membership::class],
+                function ($query) use ($gimnasioId) {
+                    $query->whereHas('member', function ($q) use ($gimnasioId) {
+                        $q->where('gimnasio_id', $gimnasioId);
+                    });
+                }
+            );
+
+        // 2. Pagos de Suplementos (Basado en SupplementSaleController)
+        $querySales = Payment::with(['paymentable.product', 'paymentable.member', 'payment_method'])
+            ->whereBetween('paid_at', [$startDateCarbon, $endDateCarbon])
+            ->whereHasMorph(
+                'paymentable',
+                [SupplementSale::class], // Modelo de venta
+                function ($query) use ($gimnasioId) {
+                    // La venta de suplemento tiene 'member'
+                    // y el member tiene gimnasio_id
+                    $query->whereHas('member', function ($q) use ($gimnasioId) {
+                        $q->where('gimnasio_id', $gimnasioId);
+                    });
+                }
+            );
+
+        $payments = $queryPayments->get();
+        $sales = $querySales->get();
+
+        // 3. Combinar todo y ordenar
+        $allTransactions = $payments->concat($sales)->sortByDesc('paid_at');
+
+        return response()->json([
+            'total_ingresos' => $allTransactions->sum('amount'),
+            'total_transacciones' => $allTransactions->count(),
+            'historial' => $allTransactions->values(), // re-indexar array
+        ]);
+    }
 }
