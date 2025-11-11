@@ -10,7 +10,7 @@ use App\Models\Membership;
 use App\Models\MembershipPlan;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\Rule;
+use Illuminate\Support\Arr; // <-- IMPORTANTE AÑADIR ESTO
 use Carbon\Carbon;
 
 class MemberController extends Controller
@@ -19,16 +19,18 @@ class MemberController extends Controller
     {
         $gimnasioId = $request->user()->gimnasio_id;
             return Member::where('gimnasio_id', $gimnasioId)
-            ->with('memberships') // ->with('memberships.plan') es más pesado si solo quieres 'is_expired'
+            ->with('memberships')
             ->get();
     }
 
-    // --- MÉTODO STORE MODIFICADO ---
+    // --- ======================================== ---
+    // --- MÉTODO STORE COMPLETAMENTE CORREGIDO ---
+    // --- ======================================== ---
     public function store(Request $request)
     {
-        $gimnasioId = $request->user()->gimnasio_id;
-
+        // 1. Validar TODOS los campos, incluyendo el plan opcional
         $validated = $request->validate([
+            'identification' => 'required|string|unique:members,identification',
             'name' => 'required|string|max:255',
             'email' => 'nullable|email|unique:members,email',
             'phone' => 'nullable|string|max:20',
@@ -37,59 +39,48 @@ class MemberController extends Controller
             'sexo' => 'nullable|string|in:masculino,femenino,no_binario,otro,preferir_no_decir',
             'estatura' => 'nullable|numeric|min:0',
             'peso' => 'nullable|numeric|min:0',
-            'identification' => 'required|string|unique:members,identification',
-
-            // --- CAMPO OPCIONAL AÑADIDO ---
-            'plan_id' => [
-                'nullable', // Permite que sea nulo o no se envíe
-                'sometimes', // Solo valida si está presente
-                // Validar que el plan exista Y pertenezca al gimnasio
-                Rule::exists('membership_plans', 'id')->where(function ($query) use ($gimnasioId) {
-                    return $query->where('gym_id', $gimnasioId);
-                }),
-            ],
+            // 'fingerprint_data' => 'nullable|string', // Quitado de aquí, se maneja abajo
+            'plan_id' => 'nullable|exists:membership_plans,id' // <-- REGLA AÑADIDA
         ]);
 
-        $validated['gimnasio_id'] = $gimnasioId;
-        $gimnasio = Gimnasio::findOrFail($validated['gimnasio_id']);
+        // 2. Separar los datos del miembro de los datos del plan
+        // Excluimos 'plan_id' porque no pertenece a la tabla 'members'
+        $memberData = Arr::except($validated, ['plan_id']); // <-- ¡CAMBIO CLAVE!
 
-        //lógica de huella original
+        // Asignar gimnasio_id del admin autenticado
+        $memberData['gimnasio_id'] = $request->user()->gimnasio_id;
+
+        // --- Lógica de Huella (Opcional) ---
+        $gimnasio = Gimnasio::findOrFail($memberData['gimnasio_id']);
         if ($gimnasio->uses_access_control) {
-            $request->validate([
-                'fingerprint_data' => 'required|string',
-            ]);
+             $request->validate(['fingerprint_data' => 'required|string']);
+             $memberData['fingerprint_data'] = $request->fingerprint_data;
+        } else {
+            $memberData['fingerprint_data'] = null;
         }
+        // --- Fin Lógica Huella ---
+
 
         $member = null;
 
-        // --- AÑADIR TRANSACCIÓN DE BASE DE DATOS ---
-        // Esto asegura que si la membresía falla, el miembro tampoco se crea.
         try {
             DB::beginTransaction();
 
-            // 1. Crear al Miembro
-            $member = Member::create([
-                ...$validated, // 'plan_id' se ignora aquí porque no está en $fillable de Member
-                'gimnasio_id' => $validated['gimnasio_id'],
-                'name' => $validated['name'],
-                'email' => $validated['email'] ?? null,
-                'phone' => $validated['phone'] ?? null,
-                'birth_date' => $validated['birth_date'] ?? null,
-                'medical_history' => $validated['medical_history'] ?? null,
-                'sexo' => $validated['sexo'] ?? null,
-                'estatura' => $validated['estatura'] ?? null,
-                'peso' => $validated['peso'] ?? null,
-                'identification' => $validated['identification'],
-                'fingerprint_data' => $request->fingerprint_data ?? null,
-            ]);
+            // 3. Crear al Miembro solo con sus datos (¡YA NO USA ...$validated!)
+            $member = Member::create($memberData);
 
-            // 2. Crear Membresía (SI se envió un plan_id)
-            if (isset($validated['plan_id']) && $validated['plan_id']) {
-                $plan = MembershipPlan::findOrFail($validated['plan_id']);
+            // 4. Si se proveyó un plan_id, crear la membresía
+            // Usamos $validated['plan_id'] porque ya fue validado
+            if (!empty($validated['plan_id'])) {
+
+                // (Comprobamos que el plan sea del gimnasio correcto por seguridad)
+                $plan = MembershipPlan::where('id', $validated['plan_id'])
+                                      ->where('gym_id', $memberData['gimnasio_id'])
+                                      ->firstOrFail();
+
+                // (Lógica para calcular fechas)
                 $startDate = Carbon::now();
                 $endDate = $startDate->copy();
-
-                // Calcular fecha de fin
                 switch ($plan->frequency) {
                     case 'daily':    $endDate->addDay(); break;
                     case 'weekly':   $endDate->addWeek(); break;
@@ -97,30 +88,35 @@ class MemberController extends Controller
                     case 'monthly':  $endDate->addMonthNoOverflow(); break;
                 }
 
-                // Crear la membresía asociada
                 Membership::create([
                     'member_id' => $member->id,
                     'plan_id' => $plan->id,
                     'start_date' => $startDate,
                     'end_date' => $endDate,
-                    'status' => 'inactive_unpaid', // <-- Estado clave
-                    'outstanding_balance' => $plan->price,
+                    'status' => 'inactive_unpaid', // Inicia inactiva
+                    'outstanding_balance' => $plan->price, // Con saldo pendiente
                 ]);
             }
 
-            DB::commit(); // Todo salió bien, guardar cambios
+            DB::commit();
 
+            // Devolvemos el miembro recién creado
             return response()->json($member, 201);
 
         } catch (\Exception $e) {
-            DB::rollBack(); // Algo falló, deshacer todo
-            return response()->json(['error' => 'No se pudo registrar al miembro.', 'details' => $e->getMessage()], 500);
+            DB::rollBack();
+            // Devolver un error más específico
+            return response()->json(['error' => 'No se pudo crear el miembro.', 'details' => $e->getMessage()], 500);
         }
     }
+    // --- ======================================== ---
+    // ---
+
 
     public function show($id)
     {
-        $member = Member::with(['memberships' => function ($q)
+        // (Tu código de 'show' original estaba bien, pero este es más completo)
+         $member = Member::with(['memberships' => function ($q)
         {
         // Modificado para que también pueda encontrar la membresía pendiente
         $q->whereIn('status', ['active', 'inactive_unpaid', 'expired']);
@@ -134,7 +130,7 @@ class MemberController extends Controller
         $member = Member::findOrFail($id);
 
         $validated = $request->validate([
-            // 'gimnasio_id' => 'sometimes|exists:gimnasios,id', // No deberías cambiar el gimnasio
+            // (Quitamos gimnasio_id, no se debe cambiar)
             'name' => 'sometimes|string|max:255',
             'email' => 'sometimes|nullable|email|unique:members,email,' . $member->id,
             'phone' => 'sometimes|nullable|string|max:20',
@@ -143,23 +139,17 @@ class MemberController extends Controller
             'sexo' => 'nullable|string|in:masculino,femenino,no_binario,otro,preferir_no_decir',
             'estatura' => 'nullable|numeric|min:0',
             'peso' => 'nullable|numeric|min:0',
-            // La identificación no debería cambiar, pero si lo permites, debe ser única
             'identification' => 'sometimes|string|unique:members,identification,' . $member->id,
+            // 'fingerprint_data' => 'nullable|string', // Se maneja abajo
         ]);
 
-       $gimnasio = $member->gimnasio; // Usar el gimnasio existente
+       // (Lógica de huella simplificada)
+        if ($request->has('fingerprint_data')) {
+             $member->fingerprint_data = $request->fingerprint_data;
+        }
 
-       //si el gimnasio tiene activado el control de acceso, la huella es obligatoria
-       if ($gimnasio->uses_access_control && $request->has('fingerprint_data')) {
-            $request->validate([
-                'fingerprint_data' => 'required|string',
-            ]);
-       }
-
-       $member->update([
-        ...$validated,
-        'fingerprint_data' => $request->fingerprint_data ?? $member->fingerprint_data,
-       ]);
+       $member->update($validated);
+       $member->save(); // Guardar huella si cambió
 
        return response()->json($member);
     }
