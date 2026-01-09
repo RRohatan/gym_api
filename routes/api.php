@@ -81,8 +81,8 @@ Route::middleware('auth:sanctum')->group(function(){
     Route::apiResource('/membershipType', MembershipTypeController::class);
 });
 
-Route::middleware('auth:Sanctum')->group(function(){
-    Route::apiResource('/gasto', GastoController::class);
+Route::middleware('auth:sanctum')->group(function(){
+    Route::apiResource('/gastos', GastoController::class);
 });
 
 Route::middleware('auth:sanctum')->group(function(){
