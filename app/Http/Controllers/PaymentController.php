@@ -29,99 +29,134 @@ class PaymentController extends Controller
 }
 
 public function store(Request $request)
-{
-    $validated = $request->validate([
-        'member_id'         => 'required|exists:members,id',
-        'amount'            => 'required|numeric|min:1000',
-        'payment_method_id' => 'required|exists:payment_methods,id',
-    ]);
+    {
+        $validated = $request->validate([
+            'member_id'         => 'required|exists:members,id',
+            'amount'            => 'required|numeric|min:1000',
+            'payment_method_id' => 'required|exists:payment_methods,id',
+        ]);
 
-    // --- INICIO DE MODIFICACIÓN (Lógica de Reactivación) ---
+        // 1. Buscar la membresía (Activa, Vencida o Por Pagar)
+        $membership = Membership::with('plan')
+            ->where('member_id', $validated['member_id'])
+            ->whereIn('status', ['active', 'expired', 'inactive_unpaid'])
+            ->latest('created_at') // Ordenar por creación para agarrar la última
+            ->first();
 
-    // Buscar la membresía activa, vencida O PENDIENTE DE PAGO
-    $membership = Membership::with('plan') // Eager load plan
-        ->where('member_id', $validated['member_id'])
-        ->whereIn('status', ['active', 'expired', 'inactive_unpaid']) // <-- 2. MODIFICADO
-        ->latest('end_date')
-        ->first();
+        if (!$membership) {
+            return response()->json(['error' => 'No se encontró una membresía asociada para aplicar el pago.'], 404);
+        }
 
-    if (!$membership) {
-        // <-- 3. MENSAJE ACTUALIZADO
-        return response()->json(['error' => 'No se encontró membresía activa, vencida o pendiente de pago.'], 404);
-    }
+        // 2. Crear el Registro de Pago
+        $payment = Payment::create([
+            'amount'            => $validated['amount'],
+            'paymentable_id'    => $membership->id,
+            'paymentable_type'  => Membership::class,
+            'payment_method_id' => $validated['payment_method_id'],
+            'paid_at'           => now(),
+        ]);
 
-    // Crear el pago
-    $payment = Payment::create([
-        'amount'            => $validated['amount'],
-        'paymentable_id'    => $membership->id,
-        'paymentable_type'  => Membership::class,
-        'payment_method_id' => $validated['payment_method_id'],
-        'paid_at'           => now(),
-    ]);
+        // 3. Aplicar pago a la deuda
+        $membership->outstanding_balance -= $validated['amount'];
+        if ($membership->outstanding_balance < 0) {
+            $membership->outstanding_balance = 0;
+        }
 
-    // Descontar saldo
-    $membership->outstanding_balance -= $validated['amount'];
-    if ($membership->outstanding_balance < 0) {
-        $membership->outstanding_balance = 0;
-    }
+        $plan = $membership->plan;
 
-    $plan = $membership->plan; // Obtenemos el plan
+        // =================================================================================
+        // LÓGICA DE REACTIVACIÓN JUSTA (Borrón y Cuenta Nueva)
+        // =================================================================================
 
-    // 4. Reactivar membresía si estaba 'expired' O 'inactive_unpaid' Y el pago cubre todo
-    if (in_array($membership->status, ['expired', 'inactive_unpaid']) && $membership->outstanding_balance == 0) {
-        $membership->status = 'active';
+        // Si ya pagó todo Y la membresía estaba vencida o inactiva...
+        if ($membership->outstanding_balance == 0 && in_array($membership->status, ['expired', 'inactive_unpaid'])) {
 
-        // El nuevo ciclo de la membresía inicia HOY (fecha de pago)
-        $fechaBase = Carbon::now();
+            // A. Definir HOY como el nuevo inicio
+            $fechaBase = Carbon::now();
 
-        // Si era un registro nuevo (del QR), actualizamos su fecha de inicio
-        if ($membership->status == 'inactive_unpaid') {
+            // B. Actualizamos Fecha Inicio a HOY (Para ignorar el mes que no vino)
             $membership->start_date = $fechaBase->copy();
+
+            // C. Calculamos Fecha Fin desde HOY según el plan (CORREGIDO INGLÉS/ESPAÑOL)
+            // Usamos las claves en Inglés que vienen de tu base de datos ('daily', 'monthly'...)
+            switch ($plan->frequency) {
+                case 'daily':
+                case 'diario':
+                    $membership->end_date = $fechaBase->copy()->addDay();
+                    break;
+
+                case 'weekly':
+                case 'semanal':
+                    $membership->end_date = $fechaBase->copy()->addWeek();
+                    break;
+
+                case 'biweekly':
+                case 'quincenal':
+                    $membership->end_date = $fechaBase->copy()->addWeeks(2); // O addDays(15)
+                    break;
+
+                case 'monthly':
+                case 'mensual':
+                    $membership->end_date = $fechaBase->copy()->addMonth();
+                    break;
+
+                case 'quarterly':
+                    $membership->end_date = $fechaBase->copy()->addMonths(3);
+                    break;
+
+                case 'biannual':
+                    $membership->end_date = $fechaBase->copy()->addMonths(6);
+                    break;
+
+                case 'yearly':
+                case 'anual':
+                    $membership->end_date = $fechaBase->copy()->addYear();
+                    break;
+
+                default:
+                    // Por seguridad, si falla, damos 1 mes
+                    $membership->end_date = $fechaBase->copy()->addMonth();
+                    break;
+            }
+
+            // D. Activar estado
+            $membership->status = 'active';
+
+            // NOTA: No seteamos outstanding_balance al precio del plan aquí.
+            // El cliente acaba de pagar, su deuda debe ser 0 para entrar.
         }
 
-        switch ($plan->frequency) {
-            case 'diario':    $membership->end_date = $fechaBase->copy()->addDay(); break;
-            case 'semanal':   $membership->end_date = $fechaBase->copy()->addWeek(); break;
-            case 'biweekly':  $membership->end_date = $fechaBase->copy()->addDays(15); break;
-            case 'mensual':   $membership->end_date = $fechaBase->copy()->addMonthNoOverflow(); break;
+        // 4. Lógica para renovar una membresía que YA estaba activa (Adelantar pago)
+        else if ($membership->status == 'active' && $membership->outstanding_balance == 0) {
+            // Aquí NO movemos la start_date, solo extendemos la end_date
+            $fechaFinActual = Carbon::parse($membership->end_date);
+
+            // Si la fecha fin ya pasó (pero seguía activa por error), usamos HOY.
+            // Si no ha pasado, sumamos desde la fecha fin actual (continuidad).
+            $baseCalculo = $fechaFinActual->isPast() ? Carbon::now() : $fechaFinActual;
+
+            switch ($plan->frequency) {
+                case 'daily': case 'diario':        $baseCalculo->addDay(); break;
+                case 'weekly': case 'semanal':      $baseCalculo->addWeek(); break;
+                case 'biweekly': case 'quincenal':  $baseCalculo->addWeeks(2); break;
+                case 'monthly': case 'mensual':     $baseCalculo->addMonth(); break;
+                case 'yearly': case 'anual':        $baseCalculo->addYear(); break;
+            }
+
+            $membership->end_date = $baseCalculo;
+
+            // Aquí podrías generar la nueva deuda para el próximo mes si quisieras
+            // $membership->outstanding_balance = $plan->price;
         }
 
-        // Resetear saldo pendiente al precio del plan para el PRÓXIMO ciclo
-        $membership->outstanding_balance = $plan->price;
+        $membership->save();
+
+        return response()->json([
+            'message'    => 'Pago registrado y membresía actualizada correctamente.',
+            'payment'    => $payment,
+            'membership' => $membership
+        ], 201);
     }
-
-    // 5. Renovar si la membresía YA ESTABA activa y el saldo es cero
-    else if ($membership->status == 'active' && $membership->outstanding_balance == 0) {
-        // Esta lógica extiende la fecha de fin (Renovación normal)
-        $fechaBase = Carbon::parse($membership->end_date);
-        $frecuencia = $plan->frequency;
-
-        switch ($frecuencia) {
-            case 'diario':     $fechaBase->addDay(); break;
-            case 'semanal':    $fechaBase->addWeek(); break;
-            case 'biweekly':   $fechaBase->addDays(15); break;
-            case 'mensual':    $fechaBase->addMonth(); break;
-        }
-
-        $membership->end_date = $fechaBase;
-        $membership->status = 'active';
-        $membership->outstanding_balance = $plan->price;
-    }
-
-    $membership->save();
-
-    // --- FIN DE MODIFICACIÓN ---
-
-    // TODO: Aquí puedes añadir la lógica para generar y enviar el recibo por email
-    // Mail::to($membership->member->email)->send(new PaymentReceipt($payment));
-
-    return response()->json([
-        'message'    => 'Pago registrado correctamente.',
-        'payment'    => $payment,
-        'membership' => $membership
-    ], 201);
-}
-
     public function show($id)
     {
         $payment = Payment::with('paymentable')->findOrFail($id);

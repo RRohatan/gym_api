@@ -13,54 +13,73 @@ class MembershipController extends Controller
 
 
 public function index(Request $request)
-{
-    $gimnasioId = $request->user()->gimnasio_id;
+    {
+        $gimnasioId = $request->user()->gimnasio_id;
 
-    // 1. Cambiar estado a 'expired' para las membresías vencidas (Lógica existente)
-    Membership::where('status', 'active')
-        ->where('end_date', '<', Carbon::now())
-        ->whereHas('member', function ($query) use ($gimnasioId) { // Alcance al gimnasio
-            $query->where('gimnasio_id', $gimnasioId);
-        })
-        ->update(['status' => 'expired']);
+        // --- 1. RUTINA DE MANTENIMIENTO AUTOMÁTICO (NUEVO) ---
+        // Buscamos todas las membresías que ya vencieron por fecha,
+        // que pertenecen a este gimnasio y que no están canceladas.
+        $membresiasVencidas = Membership::with('plan')
+            ->where('end_date', '<', Carbon::now())
+            ->where('status', '<>', 'cancelled')
+            ->whereHas('member', function ($query) use ($gimnasioId) {
+                $query->where('gimnasio_id', $gimnasioId);
+            })
+            ->get();
 
-    // 2. Construir la consulta base
-    $query = Membership::with(['member', 'plan.membershipType'])
-        ->whereHas('member', function ($query) use ($gimnasioId) {
-            $query->where('gimnasio_id', $gimnasioId);
-        });
+        foreach ($membresiasVencidas as $m) {
+            $guardarCambios = false;
 
-    // --- INICIO DE LA MEJORA (FILTRO DE ESTADO) ---
+            // A. Asegurar que el estado sea 'expired'
+            if ($m->status !== 'expired') {
+                $m->status = 'expired';
+                $guardarCambios = true;
+            }
 
-    // 3. Aplicar filtro de estado
-    $statusFilter = $request->input('status'); // ej: 'active', 'expired', 'inactive_unpaid', 'expiring_soon'
+            // B. GENERAR DEUDA NUEVA (¡Esto es lo que faltaba!)
+            // Si está vencida y su saldo es 0 (o negativo por error),
+            // significa que acabó su ciclo y debemos cargarle el precio del plan nuevo.
+            if ($m->outstanding_balance <= 0) {
+                if ($m->plan) {
+                    $m->outstanding_balance = $m->plan->price;
+                    $guardarCambios = true;
+                }
+            }
 
-    // --- ¡NUEVA LÓGICA AQUÍ! ---
-    if ($statusFilter === 'expiring_soon') {
-        // Si se pide 'expiring_soon', aplicamos la lógica del dashboard
-        $query->where('status', 'active')
-              ->whereDate('end_date', '>=', Carbon::now())
-              ->whereDate('end_date', '<=', Carbon::now()->addDays(3));
+            // Solo guardamos si hubo cambios para no saturar la base de datos
+            if ($guardarCambios) {
+                $m->save();
+            }
+        }
+        // --- FIN RUTINA ---
+
+
+        // 2. Construir la consulta base para mostrar en el Front
+        $query = Membership::with(['member', 'plan.membershipType'])
+            ->whereHas('member', function ($query) use ($gimnasioId) {
+                $query->where('gimnasio_id', $gimnasioId);
+            });
+
+        // 3. Aplicar filtro de estado
+        $statusFilter = $request->input('status');
+
+        if ($statusFilter === 'expiring_soon') {
+            $query->where('status', 'active')
+                  ->whereDate('end_date', '>=', Carbon::now())
+                  ->whereDate('end_date', '<=', Carbon::now()->addDays(3));
+        }
+        else if ($statusFilter && $statusFilter !== 'all') {
+            $query->where('status', $statusFilter);
+        } else if (!$statusFilter) {
+            // Vista por defecto
+            $query->whereIn('status', ['active', 'expired', 'inactive_unpaid']);
+        }
+
+        // 4. Traer membresías
+        $memberships = $query->get();
+
+        return response()->json($memberships);
     }
-    // --- FIN DE NUEVA LÓGICA ---
-    else if ($statusFilter && $statusFilter !== 'all') {
-        // Si se pide un estado específico (ej: ?status=inactive_unpaid)
-        $query->where('status', $statusFilter);
-    } else if (!$statusFilter) {
-        // Vista por defecto: Ocultar 'inactive_unpaid' y 'cancelled'
-        // (El admin solo ve activas y vencidas por defecto)
-        $query->whereIn('status', ['active', 'expired']);
-    }
-    // Si status == 'all', no se aplica filtro y trae todo.
-
-    // --- FIN DE LA MEJORA ---
-
-    // 4. Traer membresías
-    $memberships = $query->get();
-
-    return response()->json($memberships);
-}
-
  public function store(Request $request)
 {
     $validated = $request->validate([
