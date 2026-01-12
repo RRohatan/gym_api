@@ -151,6 +151,55 @@ public function store(Request $request)
 
         $membership->save();
 
+       // ============================================================
+        // 📧 LÓGICA DE CORREOS INTELIGENTE
+        // ============================================================
+        try {
+            $membership->load('member.gimnasio');
+            $miembro = $membership->member;
+
+            // Verificamos que el pago haya activado la membresía y tengamos datos
+            if ($membership->status === 'active' && $miembro && $miembro->email && $miembro->gimnasio) {
+
+                // 🔍 EL TRUCO: Contamos cuántos pagos tiene este cliente en total
+                // Usamos whereHasMorph para buscar pagos asociados a sus membresías
+                $totalPagos = \App\Models\Payment::whereHasMorph(
+                    'paymentable',
+                    [\App\Models\Membership::class],
+                    function ($query) use ($miembro) {
+                        $query->where('member_id', $miembro->id);
+                    }
+                )->count();
+
+                if ($totalPagos <= 1) {
+                    // CASO 1: Es su primer pago -> BIENVENIDA (Con reglas y horarios)
+                    \Illuminate\Support\Facades\Mail::to($miembro->email)
+                        ->send(new \App\Mail\BienvenidaMiembroMail($miembro, $miembro->gimnasio));
+
+                    \Illuminate\Support\Facades\Log::info("📧 Bienvenida enviada a nuevo cliente: " . $miembro->email);
+                } else {
+                    // CASO 2: Ya tiene pagos previos -> RENOVACIÓN (Solo gracias)
+                    // Pasamos el $payment actual para mostrar el monto en el correo
+                    \Illuminate\Support\Facades\Mail::to($miembro->email)
+                        ->send(new \App\Mail\RenovacionMiembroMail($miembro, $miembro->gimnasio, $payment));
+
+                    \Illuminate\Support\Facades\Log::info("📧 Renovación enviada a cliente recurrente: " . $miembro->email);
+                }
+            }
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error("❌ Error enviando correo pago: " . $e->getMessage());
+        }
+    
+    // ============================================================
+    // FIN CORREO
+    // ============================================================
+
+    return response()->json([ // <--- ESTO YA LO TIENES
+        'message'    => 'Pago registrado y membresía actualizada correctamente.',
+        'payment'    => $payment,
+        'membership' => $membership
+    ], 201);
+
         return response()->json([
             'message'    => 'Pago registrado y membresía actualizada correctamente.',
             'payment'    => $payment,

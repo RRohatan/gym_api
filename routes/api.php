@@ -72,6 +72,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('/membershipPlan', MembershipPlanController::class);
     Route::apiResource('/membershipType', MembershipTypeController::class);
 
+   Route::get('/gimnasio/config', [GimnasioController::class, 'show']);       // Para Cargar datos
+    Route::put('/gimnasio/config', [GimnasioController::class, 'updateConfig']); // Para Guardar datos
+
+
     // ----------------------------------------------------
     // 🚨 CORRECCIÓN IMPORTANTE AQUÍ TAMBIÉN 🚨
     // 1. Primero el historial y total
