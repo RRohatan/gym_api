@@ -32,7 +32,8 @@ class Member extends Model
 
     public function memberships()
     {
-        return $this->hasMany(Membership::class);
+        //return $this->hasMany(Membership::class);
+        return $this->hasMany(Membership::class)->orderBy('id', 'desc');
     }
 
     public function sales()
