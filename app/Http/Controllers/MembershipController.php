@@ -88,16 +88,21 @@ public function index(Request $request)
         // 'end_date' => 'required|date', // -> Eliminado: Esta fecha se calcula abajo
     ]);
 
-      // Verificar si el cliente ya tiene una membresía activa, vencida O PENDIENTE
+    // Verificar si el cliente ya tiene una membresía activa O PENDIENTE (permitimos expired)
     $existing = \App\Models\Membership::where('member_id', $validated['member_id'])
-        ->whereIn('status', ['active', 'expired', 'inactive_unpaid']) // <-- MODIFICADO
+        ->whereIn('status', ['active', 'inactive_unpaid']) // <-- MODIFICADO: Quitamos 'expired'
         ->first();
 
     if ($existing) {
         return response()->json([
-            'error' => 'El cliente ya tiene una membresía activa, vencida o pendiente de pago.' // <-- MODIFICADO
+            'error' => 'El cliente ya tiene una membresía activa o pendiente de pago.' // <-- MODIFICADO
         ], 422); // 422 = Unprocessable Entity
     }
+
+    // OPTIONAL: Si el usuario quiere borrar el historial de vencidas al asignar una nueva:
+    \App\Models\Membership::where('member_id', $validated['member_id'])
+        ->where('status', 'expired')
+        ->delete();
 
     // Obtener el plan para usar su precio como saldo pendiente
     $plan = \App\Models\MembershipPlan::findOrFail($validated['plan_id']);
