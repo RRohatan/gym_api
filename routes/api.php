@@ -96,4 +96,5 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('/supplementProduct', SupplementProductController::class);
     Route::post('/supplement-sales/bulk', [SupplementSaleController::class, 'storeBulk']);
     Route::apiResource('/supplementSale', SupplementSaleController::class);
+    Route::apiResource('/product-purchases', \App\Http\Controllers\ProductPurchaseController::class);
 });
