@@ -13,10 +13,16 @@ use Illuminate\Support\Facades\Log;
 
 class SupplementSaleController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
+        $gimnasioId = $request->user()->gimnasio_id;
+
         return response()->json([
-            'data' => SupplementSale::with(['product', 'member'])->get()
+            'data' => SupplementSale::with(['product', 'member'])
+                ->whereHas('member', function ($query) use ($gimnasioId) {
+                    $query->where('gimnasio_id', $gimnasioId);
+                })
+                ->get()
         ]);
     }
 
