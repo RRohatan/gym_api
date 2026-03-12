@@ -162,4 +162,22 @@ class MemberController extends Controller
 
         return response()->json(['message' => 'Miembro eliminado con éxito']);
     }
+
+    /**
+     * Enrolar o actualizar la huella dactilar de un miembro (DigitalPersona).
+     * El cliente envía el FMD (Fingerprint Minutiae Data) en base64.
+     */
+    public function enrollFingerprint(Request $request, $id)
+    {
+        $member = Member::findOrFail($id);
+
+        $request->validate([
+            'fingerprint_data' => 'required|string',
+        ]);
+
+        $member->fingerprint_data = $request->fingerprint_data;
+        $member->save();
+
+        return response()->json(['success' => true, 'message' => 'Huella registrada correctamente']);
+    }
 }

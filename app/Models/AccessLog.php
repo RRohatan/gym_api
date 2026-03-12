@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class AccessLog extends Model
 {
+    public $timestamps = false;
+
     protected $fillable = [
         'member_id',
         'method',
