@@ -155,6 +155,19 @@ class MemberController extends Controller
     }
 
 
+    public function storeFingerprint(Request $request, $id)
+    {
+        $request->validate([
+            'fingerprint_data' => 'required|string',
+        ]);
+
+        $member = Member::findOrFail($id);
+        $member->fingerprint_data = $request->fingerprint_data;
+        $member->save();
+
+        return response()->json(['message' => 'Huella guardada correctamente']);
+    }
+
     public function destroy($id)
     {
         $member = Member::findOrFail($id);

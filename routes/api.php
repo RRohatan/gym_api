@@ -37,12 +37,15 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::get('/public/plans/{gimnasio_id}', [PublicRegistrationController::class, 'getPlans']);
 Route::post('/public/register/{gimnasio_id}', [PublicRegistrationController::class, 'store']);
 
-// Acceso (Kiosco / DigitalPersona) - Sin token, accesibles desde el kiosco.
+// Acceso (Kiosco / Huella) — rutas públicas, el kiosco no tiene sesión de admin.
 Route::post('/access/identification', [AccesController::class, 'accessByIdentification']);
 // El kiosco primero descarga los FMDs, hace el matching con el SDK de DigitalPersona
 // y luego llama a /access/fingerprint con el member_id identificado.
 Route::get('/access/fingerprints/{gimnasio_id}', [AccesController::class, 'getFingerprintsForGym']);
 Route::post('/access/fingerprint', [AccesController::class, 'accessByFingerprint']);
+Route::post('/access/fingerprint/match', [AccesController::class, 'matchFingerprint']);
+// Templates para identificación 1:N en el kiosco
+Route::get('/kiosk/fingerprints/{gimnasio_id}', [AccesController::class, 'getFingerprintTemplates']);
 
 /*
 |--------------------------------------------------------------------------
@@ -68,7 +71,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('/memberships', MembershipController::class);
     // ----------------------------------------------------
 
-    Route::get('/access/logs', [AccesController::class, 'getLogs']);
+    Route::post('/members/{id}/fingerprint', [MemberController::class, 'storeFingerprint']);
     Route::apiResource('/members', MemberController::class);
     Route::post('/members/{id}/fingerprint', [MemberController::class, 'enrollFingerprint']);
 

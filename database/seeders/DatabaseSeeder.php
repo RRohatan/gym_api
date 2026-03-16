@@ -30,7 +30,8 @@ class DatabaseSeeder extends Seeder
             // Por cada tipo, crear 1-2 planes
             $types->each(function ($type) use ($gimnasio) {
                 MembershipPlan::factory(rand(1, 2))->create([
-                    'membership_type_id' => $type->id
+                    'membership_type_id' => $type->id,
+                    'gym_id' => $gimnasio->id,
                 ]);
             });
 
