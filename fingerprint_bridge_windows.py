@@ -222,13 +222,18 @@ class FingerprintDevice:
         ret = self._dpfpdd.dpfpdd_capture(
             self._dev, ctypes.byref(param), ctypes.byref(buf_size), buf
         )
+        print(f"[DBG] dpfpdd_capture ret={ret:#010x} buf_size={buf_size.value}")
+        print(f"[DBG] hdr.success={hdr.success} hdr.quality={hdr.quality} hdr.image_size={hdr.image_size}")
+        print(f"[DBG] image_info: width={hdr.info.width} height={hdr.info.height} res={hdr.info.res} bpp={hdr.info.bpp}")
+
         if ret != DPFPDD_SUCCESS:
             raise RuntimeError(f"Captura fallida: error {ret:#010x}")
         if not hdr.success:
-            raise RuntimeError("Calidad de imagen insuficiente. Intenta de nuevo.")
+            raise RuntimeError(f"Calidad de imagen insuficiente (quality={hdr.quality}). Intenta de nuevo.")
 
         offset      = ctypes.sizeof(DPFPDD_CAPTURE_RESULT)
         image_bytes = bytes(buf[offset : offset + hdr.image_size])
+        print(f"[DBG] image_bytes len={len(image_bytes)}")
 
         return image_bytes, hdr.info.width, hdr.info.height, hdr.info.res
 
@@ -241,6 +246,7 @@ class FingerprintDevice:
         c_fmd    = (ctypes.c_ubyte * MAX_FMD_SIZE)()
         c_size   = ctypes.c_uint(MAX_FMD_SIZE)
 
+        print(f"[DBG] dpfj_create_fmd_from_raw: img_size={img_size} {width}x{height}@{dpi}dpi")
         ret = self._dpfj.dpfj_create_fmd_from_raw(
             c_img, img_size,
             width, height, dpi,
@@ -249,6 +255,7 @@ class FingerprintDevice:
             ANSI_FMD,
             c_fmd, ctypes.byref(c_size),
         )
+        print(f"[DBG] dpfj_create_fmd_from_raw ret={ret} fmd_size={c_size.value}")
         if ret != 0:
             raise RuntimeError(f"FMD extraction fallida: {ret:#010x}")
 
