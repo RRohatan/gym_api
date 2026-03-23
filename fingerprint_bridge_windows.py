@@ -155,6 +155,11 @@ class FingerprintDevice:
         self._dpfpdd = ctypes.CDLL(_find_dll("dpfpdd.dll"))
         self._dpfj   = ctypes.CDLL(_find_dll("dpfj.dll"))
 
+        # El SDK requiere inicializacion explicita antes de cualquier llamada
+        ret = self._dpfpdd.dpfpdd_init()
+        if ret != DPFPDD_SUCCESS:
+            raise RuntimeError(f"dpfpdd_init fallido: {ret:#010x}")
+
         cnt = ctypes.c_uint(0)
         self._dpfpdd.dpfpdd_query_devices(ctypes.byref(cnt), None)
         if cnt.value == 0:
@@ -176,6 +181,11 @@ class FingerprintDevice:
         if self._dev and self._dpfpdd:
             try:
                 self._dpfpdd.dpfpdd_close(self._dev)
+            except Exception:
+                pass
+        if self._dpfpdd:
+            try:
+                self._dpfpdd.dpfpdd_exit()
             except Exception:
                 pass
         self._dev = ctypes.c_void_p(None)
