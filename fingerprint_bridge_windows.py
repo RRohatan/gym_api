@@ -347,6 +347,17 @@ async def _send(ws, data: dict):
     await ws.send(json.dumps(data))
 
 
+async def _send_progress_stages(ws, total: int = 4):
+    """
+    dpfpdd captura en una sola toma (sin stages).
+    Simula las etapas que espera el frontend para mantener compatibilidad
+    con la UI del bridge Linux (que usa libfprint con 4 etapas).
+    """
+    for stage in range(1, total + 1):
+        await _send(ws, {"event": "progress", "stage": stage})
+        await asyncio.sleep(0.05)
+
+
 async def handle_capture(ws):
     """
     Captura el template sin guardarlo.
@@ -359,6 +370,7 @@ async def handle_capture(ws):
             fmd_bytes = await asyncio.get_event_loop().run_in_executor(
                 None, fp_device.enroll
             )
+            await _send_progress_stages(ws)
             fmd_b64 = base64.b64encode(fmd_bytes).decode()
             await _send(ws, {"event": "captured", "success": True, "template": fmd_b64})
         except Exception as e:
@@ -381,6 +393,7 @@ async def handle_enroll(ws, payload: dict):
             fmd_bytes = await asyncio.get_event_loop().run_in_executor(
                 None, fp_device.enroll
             )
+            await _send_progress_stages(ws)
             fmd_b64 = base64.b64encode(fmd_bytes).decode()
             api_save_fingerprint(api_url, token, member_id, fmd_b64)
             await _send(ws, {
