@@ -211,22 +211,16 @@ class FingerprintDevice:
             image_res  = 0,      # nativa
         )
 
-        # Primera llamada: obtener tamano requerido del buffer
-        result_size = ctypes.c_uint(0)
-        self._dpfpdd.dpfpdd_capture(
-            self._dev, ctypes.byref(param), ctypes.byref(result_size), None
-        )
-
-        if result_size.value == 0:
-            result_size = ctypes.c_uint(512 * 1024)  # fallback 512 KB
-
-        # Segunda llamada: captura real
-        buf = ctypes.create_string_buffer(result_size.value)
-        hdr = DPFPDD_CAPTURE_RESULT.from_buffer(buf)
-        hdr.size = result_size.value
+        # Una sola llamada con buffer pre-asignado (512 KB cubre cualquier imagen)
+        # No usar el patron de dos llamadas — la primera activaria el dispositivo
+        # y consumiria la imagen antes de la captura real.
+        buf_size = ctypes.c_uint(512 * 1024)
+        buf      = ctypes.create_string_buffer(buf_size.value)
+        hdr      = DPFPDD_CAPTURE_RESULT.from_buffer(buf)
+        hdr.size = buf_size.value
 
         ret = self._dpfpdd.dpfpdd_capture(
-            self._dev, ctypes.byref(param), ctypes.byref(result_size), buf
+            self._dev, ctypes.byref(param), ctypes.byref(buf_size), buf
         )
         if ret != DPFPDD_SUCCESS:
             raise RuntimeError(f"Captura fallida: error {ret:#010x}")
