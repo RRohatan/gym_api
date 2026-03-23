@@ -32,6 +32,7 @@ WS_HOST = "localhost"
 WS_PORT = 3001
 
 _SDK_SEARCH_DIRS = [
+    os.path.dirname(os.path.abspath(__file__)),  # mismo directorio del script
     r"C:\Program Files\DigitalPersona\U.are.U SDK\Windows\Lib\x64",
     r"C:\Program Files\DigitalPersona\U.are.U SDK\Windows\Lib\Win32",
     r"C:\Program Files (x86)\DigitalPersona\U.are.U SDK\Windows\Lib\x86",
