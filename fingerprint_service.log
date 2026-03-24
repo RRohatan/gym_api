@@ -1,0 +1,9 @@
+2026-03-24 10:03:04,225 [DEBUG] DLL dir agregado: C:\Users\Usuario\Documents\Proyectos\gym_api
+2026-03-24 10:03:04,225 [DEBUG] DLL dir agregado: C:\Program Files\DigitalPersona\U.are.U SDK\Windows\Lib\x64
+2026-03-24 10:03:04,225 [DEBUG] DLL dir agregado: C:\Program Files\DigitalPersona\U.are.U SDK\Windows\Lib\Win32
+2026-03-24 10:03:04,234 [INFO] [OK] dpfj.dll cargado
+2026-03-24 10:03:04,234 [INFO] [OK] Servicio de matching en http://127.0.0.1:3002/match
+2026-03-24 10:05:51,780 [INFO] [127.0.0.1] "OPTIONS /match HTTP/1.1" 204 -
+2026-03-24 10:05:51,835 [INFO] [MATCH] candidatos=1 resultado=429
+2026-03-24 10:05:51,835 [INFO] [127.0.0.1] "POST /match HTTP/1.1" 200 -
+2026-03-24 10:57:14,398 [INFO] [·] Servicio detenido.

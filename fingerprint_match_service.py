@@ -20,7 +20,31 @@ import ctypes
 import json
 import base64
 import os
+import sys
+import logging
 from http.server import BaseHTTPRequestHandler, HTTPServer
+
+# ── Logging a archivo (print() no funciona en servicios Windows) ───────────────
+
+_LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fingerprint_service.log")
+logging.basicConfig(
+    filename=_LOG_FILE,
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+log = logging.getLogger(__name__)
+
+# Redirigir print() al log para no cambiar el resto del codigo
+class _PrintToLog:
+    def write(self, msg):
+        msg = msg.strip()
+        if msg:
+            log.info(msg)
+    def flush(self):
+        pass
+
+sys.stdout = _PrintToLog()
+sys.stderr = _PrintToLog()
 
 # ── Configuracion ──────────────────────────────────────────────────────────────
 
@@ -33,6 +57,17 @@ _SDK_SEARCH_DIRS = [
     r"C:\Program Files\DigitalPersona\U.are.U SDK\Windows\Lib\Win32",
     r"C:\Program Files (x86)\DigitalPersona\U.are.U SDK\Windows\Lib\x86",
 ]
+
+# Agregar todos los directorios SDK al search path de DLLs de Windows.
+# Esto es critico cuando corre como servicio: el PATH es minimo y
+# las DLLs dependientes de dpfj.dll no se encuentran de otra forma.
+for _d in _SDK_SEARCH_DIRS:
+    if os.path.isdir(_d):
+        try:
+            os.add_dll_directory(_d)
+            log.debug(f"DLL dir agregado: {_d}")
+        except Exception as _e:
+            log.warning(f"No se pudo agregar DLL dir {_d}: {_e}")
 
 ANSI_FMD       = 0x001B0001  # DPFJ_FMD_ANSI_378_2004
 MAX_FMD_SIZE   = 1600
