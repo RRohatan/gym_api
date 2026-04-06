@@ -4,19 +4,15 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use LucasDotVin\Soulbscription\Models\Concerns\HasSubscriptions;
 
 class Gimnasio extends Model
 {
 
-    use HasFactory;
+    use HasFactory, HasSubscriptions;
 
     protected $fillable = ['nombre', 'uses_acces_control','horarios','politicas',  'url_grupo_whatsapp']; 
 
-
-     public function users()
-    {
-        return $this->hasMany(User::class);
-    }
 
     public function members()
     {

@@ -35,7 +35,7 @@ class User extends Authenticatable
     }
 
     public function gimnasio()
-{
-    return $this->belongsTo(Gimnasio::class);
-}
+    {
+        return $this->belongsTo(Gimnasio::class);
+    }
 }

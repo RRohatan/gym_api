@@ -14,6 +14,8 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        $this->call(PlansSeeder::class);
+
         $gimnasio = Gimnasio::factory()->create();
         // Crear un usuario de prueba
         User::factory()->create([

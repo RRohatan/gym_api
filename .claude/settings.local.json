@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:soulbscription.lucas.vin)",
+      "Bash(php artisan:*)",
+      "Read(//c/Users/Usuario/Documents/Proyectos/gym_front/**)",
+      "Bash(npm run:*)",
+      "Read(//c/Users/Usuario/AppData/Local/Temp/claude/C--Users-Usuario-Documents-Proyectos-gym-api/5f8889ff-c255-42b1-afec-aa581af04f50/tasks/**)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(composer require:*)"
+    ]
+  }
+}

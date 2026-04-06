@@ -18,6 +18,7 @@ use App\Http\Controllers\MembershipTypeController;
 use App\Http\Controllers\PaymentMethodController;
 use App\Http\Controllers\AccesController;
 use App\Http\Controllers\PublicRegistrationController;
+use App\Http\Controllers\SubscriptionController;
 
 /*
 |--------------------------------------------------------------------------
@@ -104,4 +105,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/supplement-sales/bulk', [SupplementSaleController::class, 'storeBulk']);
     Route::apiResource('/supplementSale', SupplementSaleController::class);
     Route::apiResource('/product-purchases', \App\Http\Controllers\ProductPurchaseController::class);
+
+    // Suscripciones
+    Route::get('/subscription', [SubscriptionController::class, 'current']);
+    Route::post('/subscription', [SubscriptionController::class, 'subscribe']);
+    Route::put('/subscription/switch', [SubscriptionController::class, 'switchPlan']);
+    Route::delete('/subscription', [SubscriptionController::class, 'cancel']);
 });
+
+// Planes (público para que el frontend los muestre antes de registrarse)
+Route::get('/subscription-plans', [SubscriptionController::class, 'plans']);
