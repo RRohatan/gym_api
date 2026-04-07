@@ -115,3 +115,17 @@ Route::middleware('auth:sanctum')->group(function () {
 
 // Planes (público para que el frontend los muestre antes de registrarse)
 Route::get('/subscription-plans', [SubscriptionController::class, 'plans']);
+
+/*
+|--------------------------------------------------------------------------
+| RUTAS SERVICE-TO-SERVICE (Requieren X-Service-Key header)
+|--------------------------------------------------------------------------
+*/
+Route::middleware('service.key')->prefix('service')->group(function () {
+    Route::get('/subscription-plans', [SubscriptionController::class, 'plans']);
+    Route::get('/gyms/subscriptions', [SubscriptionController::class, 'listGymsSubscriptions']);
+    Route::get('/gyms/{gimnasioId}/subscription', [SubscriptionController::class, 'getGymSubscription']);
+    Route::post('/gyms/{gimnasioId}/subscription', [SubscriptionController::class, 'subscribeGym']);
+    Route::put('/gyms/{gimnasioId}/subscription', [SubscriptionController::class, 'switchGymPlan']);
+    Route::delete('/gyms/{gimnasioId}/subscription', [SubscriptionController::class, 'cancelGymSubscription']);
+});
