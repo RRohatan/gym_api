@@ -16,12 +16,10 @@ public function index(Request $request)
     {
         $gimnasioId = $request->user()->gimnasio_id;
 
-        // --- 1. RUTINA DE MANTENIMIENTO AUTOMÁTICO (NUEVO) ---
-        // Buscamos todas las membresías que ya vencieron por fecha,
-        // que pertenecen a este gimnasio y que no están canceladas.
+        // --- 1. RUTINA DE MANTENIMIENTO AUTOMÁTICO ---
         $membresiasVencidas = Membership::with('plan')
             ->where('end_date', '<', Carbon::now())
-            ->where('status', '<>', 'cancelled')
+            ->whereNotIn('status', ['cancelled', 'inactive'])
             ->whereHas('member', function ($query) use ($gimnasioId) {
                 $query->where('gimnasio_id', $gimnasioId);
             })
@@ -30,53 +28,59 @@ public function index(Request $request)
         foreach ($membresiasVencidas as $m) {
             $guardarCambios = false;
 
-            // A. Asegurar que el estado sea 'expired'
+            // Membresías vencidas hace más de 2 meses → pasar a 'inactive' y ocultar
+            if ($m->end_date < Carbon::now()->subMonths(2)) {
+                $m->status = 'inactive';
+                $m->save();
+                continue;
+            }
+
             if ($m->status !== 'expired') {
                 $m->status = 'expired';
                 $guardarCambios = true;
             }
 
-            // B. GENERAR DEUDA NUEVA (¡Esto es lo que faltaba!)
-            // Si está vencida y su saldo es 0 (o negativo por error),
-            // significa que acabó su ciclo y debemos cargarle el precio del plan nuevo.
-            if ($m->outstanding_balance <= 0) {
-                if ($m->plan) {
-                    $m->outstanding_balance = $m->plan->price;
-                    $guardarCambios = true;
-                }
+            if ($m->outstanding_balance <= 0 && $m->plan) {
+                $m->outstanding_balance = $m->plan->price;
+                $guardarCambios = true;
             }
 
-            // Solo guardamos si hubo cambios para no saturar la base de datos
             if ($guardarCambios) {
                 $m->save();
             }
         }
         // --- FIN RUTINA ---
 
-
-        // 2. Construir la consulta base para mostrar en el Front
+        // 2. Construir la consulta base
         $query = Membership::with(['member', 'plan.membershipType'])
             ->whereHas('member', function ($query) use ($gimnasioId) {
                 $query->where('gimnasio_id', $gimnasioId);
             });
 
-        // 3. Aplicar filtro de estado
+        // 3. Filtro de búsqueda por nombre de miembro
+        $search = $request->input('search');
+        if ($search) {
+            $query->whereHas('member', function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%");
+            });
+        }
+
+        // 4. Aplicar filtro de estado
         $statusFilter = $request->input('status');
 
         if ($statusFilter === 'expiring_soon') {
             $query->where('status', 'active')
                   ->whereDate('end_date', '>=', Carbon::now())
                   ->whereDate('end_date', '<=', Carbon::now()->addDays(3));
-        }
-        else if ($statusFilter && $statusFilter !== 'all') {
+        } elseif ($statusFilter && $statusFilter !== 'all') {
             $query->where('status', $statusFilter);
-        } else if (!$statusFilter) {
-            // Vista por defecto
+        } else {
+            // Vista por defecto: excluir inactivas y canceladas
             $query->whereIn('status', ['active', 'expired', 'inactive_unpaid']);
         }
 
-        // 4. Traer membresías
-        $memberships = $query->get();
+        // 5. Ordenar por fecha más reciente y paginar
+        $memberships = $query->orderByDesc('end_date')->paginate(15);
 
         return response()->json($memberships);
     }
@@ -150,7 +154,7 @@ public function index(Request $request)
             'start_date' => 'sometimes|date',
             'end_date' => 'sometimes|date|after_or_equal:start_date',
             // Añadimos los nuevos estados que puede poner el admin
-            'status' => 'sometimes|in:active,expired,cancelled,inactive_unpaid',
+            'status' => 'sometimes|in:active,expired,cancelled,inactive_unpaid,inactive',
         ]);
 
         $membership->update($validated);
