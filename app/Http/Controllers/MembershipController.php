@@ -18,8 +18,8 @@ public function index(Request $request)
 
         // --- 1. RUTINA DE MANTENIMIENTO AUTOMÁTICO ---
         $membresiasVencidas = Membership::with('plan')
-            ->where('end_date', '<', Carbon::now())
-            ->whereNotIn('status', ['cancelled', 'inactive'])
+                ->where('end_date', '<', Carbon::now())
+                ->whereNotIn('status', ['cancelled', 'inactive_unpaid'])
             ->whereHas('member', function ($query) use ($gimnasioId) {
                 $query->where('gimnasio_id', $gimnasioId);
             })
@@ -28,9 +28,9 @@ public function index(Request $request)
         foreach ($membresiasVencidas as $m) {
             $guardarCambios = false;
 
-            // Membresías vencidas hace más de 2 meses → pasar a 'inactive' y ocultar
+            // Membresías vencidas hace más de 2 meses → pasar a 'inactive_unpaid' y ocultar
             if ($m->end_date < Carbon::now()->subMonths(2)) {
-                $m->status = 'inactive';
+                    $m->status = 'inactive_unpaid';
                 $m->save();
                 continue;
             }
@@ -129,7 +129,7 @@ public function index(Request $request)
     // =================================================================
     // Cuando el admin crea una membresía, también debe estar inactiva
     // y esperar el pago en la vista de Pagos.
-    $validated['status'] = 'inactive_unpaid'; // <-- MODIFICADO (antes era 'active')
+        $validated['status'] = 'inactive_unpaid'; // <-- MODIFICADO (antes era 'active')
     // =================================================================
 
 
@@ -154,7 +154,7 @@ public function index(Request $request)
             'start_date' => 'sometimes|date',
             'end_date' => 'sometimes|date|after_or_equal:start_date',
             // Añadimos los nuevos estados que puede poner el admin
-            'status' => 'sometimes|in:active,expired,cancelled,inactive_unpaid,inactive',
+                'status' => 'sometimes|in:active,expired,cancelled,inactive_unpaid', // 'inactive' removed
         ]);
 
         $membership->update($validated);
