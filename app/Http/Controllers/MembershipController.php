@@ -174,6 +174,33 @@ public function index(Request $request)
                 'status' => 'sometimes|in:active,expired,cancelled,inactive_unpaid', // 'inactive' removed
         ]);
 
+        // Si se cambia el plan mientras la membresía sigue pendiente de pago (o vencida),
+        // recalculamos la deuda y la fecha fin tentativa según el plan nuevo, en vez de
+        // dejar arrastrado el precio/fecha del plan anterior.
+        if (
+            array_key_exists('plan_id', $validated) &&
+            (int) $validated['plan_id'] !== (int) $membership->plan_id &&
+            in_array($membership->status, ['inactive_unpaid', 'expired'])
+        ) {
+            $plan = MembershipPlan::findOrFail($validated['plan_id']);
+
+            $validated['outstanding_balance'] = $plan->price;
+
+            $fechaInicio = $membership->start_date ? Carbon::parse($membership->start_date) : Carbon::now();
+            $fechaFin = $fechaInicio->copy();
+            switch ($plan->frequency) {
+                case 'daily': case 'diario':       $fechaFin->addDay(); break;
+                case 'weekly': case 'semanal':     $fechaFin->addWeek(); break;
+                case 'biweekly': case 'quincenal': $fechaFin->addDays(15); break;
+                case 'monthly': case 'mensual':    $fechaFin->addMonth(); break;
+                case 'quarterly':                  $fechaFin->addMonths(3); break;
+                case 'biannual':                   $fechaFin->addMonths(6); break;
+                case 'yearly': case 'anual':        $fechaFin->addYear(); break;
+                default:                           $fechaFin->addMonth(); break;
+            }
+            $validated['end_date'] = $fechaFin;
+        }
+
         $membership->update($validated);
 
         return response()->json($membership);
