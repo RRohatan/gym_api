@@ -37,6 +37,13 @@ public function index(Request $request)
         foreach ($membresiasVencidas as $m) {
             $guardarCambios = false;
 
+            // Si el saldo quedó en 0 (ya se había pagado), regeneramos la deuda
+            // del nuevo período antes de decidir a qué estado pasa.
+            if ($m->outstanding_balance <= 0 && $m->plan) {
+                $m->outstanding_balance = $m->plan->price;
+                $guardarCambios = true;
+            }
+
             // Membresías vencidas hace más de 3 días → pasar a 'inactive_unpaid'
             if (Carbon::parse($m->end_date)->lt($now->copy()->subDays(3))) {
                 $m->status = 'inactive_unpaid';
@@ -46,11 +53,6 @@ public function index(Request $request)
 
             if ($m->status !== 'expired') {
                 $m->status = 'expired';
-                $guardarCambios = true;
-            }
-
-            if ($m->outstanding_balance <= 0 && $m->plan) {
-                $m->outstanding_balance = $m->plan->price;
                 $guardarCambios = true;
             }
 

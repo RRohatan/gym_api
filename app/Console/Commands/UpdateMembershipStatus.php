@@ -73,13 +73,20 @@ class UpdateMembershipStatus extends Command
         }
 
         // 3. VENCER: Membresías que vencieron ayer o antes y siguen 'activas'
-        $expired = Membership::with('member')
+        $expired = Membership::with(['member', 'plan'])
             ->where('status', 'active')
             ->whereDate('end_date', '<', $now->toDateString())
             ->get();
 
         foreach ($expired as $membership) {
             $membership->status = 'expired';
+
+            // Si el saldo estaba en 0 (ya se había pagado), regeneramos la deuda
+            // del nuevo período que empieza a vencerse.
+            if ($membership->outstanding_balance <= 0 && $membership->plan) {
+                $membership->outstanding_balance = $membership->plan->price;
+            }
+
             $membership->save();
 
             // --- INICIO MODIFICACIÓN ---
@@ -91,13 +98,20 @@ class UpdateMembershipStatus extends Command
 
         // 4. SUSPENDER: Membresías 'vencidas' por más de 3 días (Período de gracia)
         // (Esta lógica ya estaba correcta)
-        $suspended = Membership::with('member')
+        $suspended = Membership::with(['member', 'plan'])
             ->where('status', 'expired')
             ->whereDate('end_date', '<=', $now->copy()->subDays(3)->toDateString())
             ->get();
 
         foreach ($suspended as $membership) {
             $membership->status = 'inactive_unpaid';
+
+            // Red de seguridad: si por algún motivo llegó aquí con saldo 0,
+            // regeneramos la deuda antes de suspenderla.
+            if ($membership->outstanding_balance <= 0 && $membership->plan) {
+                $membership->outstanding_balance = $membership->plan->price;
+            }
+
             $membership->save();
 
             // --- INICIO MODIFICACIÓN ---
